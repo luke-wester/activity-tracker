@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+daily_logs/
+activity_log.txt
+daily_summary.csv
+daily_summary_analysis.csv
+activity_report.html
+.DS_Store
