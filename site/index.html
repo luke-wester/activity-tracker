@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity Tracker for Mac</title>
+  <meta
+    name="description"
+    content="Track focus, meetings, browsing, and page-level activity on macOS with a downloadable desktop app."
+  >
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">macOS Desktop App</div>
+        <h1>Activity Tracker</h1>
+        <p class="lede">
+          Track focus, meetings, browsing, and page-level activity in real time with a local Mac app built for personal productivity.
+        </p>
+        <div class="hero-actions">
+          <a
+            class="button button-primary"
+            href="https://github.com/luke-wester/activity-tracker/releases/latest"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Download for Mac
+          </a>
+          <a class="button button-secondary" href="#setup">How it works</a>
+        </div>
+        <p class="meta">
+          macOS only. Runs locally on your computer. Requires Accessibility and Automation permissions.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="mini-window">
+          <div class="mini-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="mini-panel mini-panel-top">
+            <div class="mini-title">Activity Tracker</div>
+            <div class="mini-subtitle">Track focus, meetings, browsing, and page-level activity in real time.</div>
+          </div>
+          <div class="mini-grid">
+            <div class="mini-panel">
+              <div class="mini-kicker">Current Status</div>
+              <div class="mini-stat">Running</div>
+              <div class="mini-pill">Stop Tracking</div>
+            </div>
+            <div class="mini-panel">
+              <div class="mini-kicker">Live Report</div>
+              <div class="mini-copy">Charts, category totals, browsing breakdowns, and time management recommendations.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section cards">
+      <article class="card">
+        <h2>Tracks Real Computer Activity</h2>
+        <p>Monitors frontmost apps, window titles, Chrome page details, and work patterns directly on macOS.</p>
+      </article>
+      <article class="card">
+        <h2>Built-In Reports</h2>
+        <p>Generates a live local report with charts for categories, browsing URLs, daily trends, and recommendations.</p>
+      </article>
+      <article class="card">
+        <h2>Privacy First</h2>
+        <p>Tracking happens locally on the user’s Mac. No cloud sync is required unless you add it later.</p>
+      </article>
+    </section>
+
+    <section class="section split" id="setup">
+      <div class="card">
+        <h2>Setup</h2>
+        <ol>
+          <li>Download the latest Mac app from GitHub Releases.</li>
+          <li>Open the app and allow macOS permissions when prompted.</li>
+          <li>Click <strong>Start Tracking</strong> to begin logging activity.</li>
+          <li>Use <strong>Open Live Report</strong> to review charts and recommendations.</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h2>What Users Need To Know</h2>
+        <ul>
+          <li>This app is for macOS.</li>
+          <li>It cannot run purely in the browser because browsers cannot observe system-wide app activity.</li>
+          <li>Users need to download the desktop app to use the tracker.</li>
+          <li>The web page is the download and onboarding layer.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section card release-card">
+      <h2>Publish Flow</h2>
+      <p>
+        Upload each new Mac build to
+        <a href="https://github.com/luke-wester/activity-tracker/releases" target="_blank" rel="noreferrer">GitHub Releases</a>,
+        then this page can always point users to the latest downloadable version.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

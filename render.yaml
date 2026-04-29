@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: activity-tracker-download
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: site

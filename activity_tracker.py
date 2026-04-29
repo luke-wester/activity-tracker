@@ -2,6 +2,7 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 import csv
+import json
 import subprocess
 import threading
 import time
@@ -151,6 +152,129 @@ def render_table(title, headers, rows):
     )
 
 
+def get_browsing_rows(rows):
+    browsing_rows = []
+    for row in rows:
+        if row.get("Category") != "Web Browsing":
+            continue
+        url = row.get("URL", "")
+        page = row.get("Page", "")
+        parsed = urlparse(url) if url else None
+        domain = parsed.netloc.replace("www.", "") if parsed and parsed.netloc else ""
+        label = domain or page or "Unknown"
+        browsing_rows.append({"label": label, "minutes": row["Minutes"]})
+    return browsing_rows
+
+
+def summarize_browser_minutes(rows):
+    totals = {}
+    for row in get_browsing_rows(rows):
+        totals[row["label"]] = totals.get(row["label"], 0) + row["minutes"]
+    return sorted(totals.items(), key=lambda item: (-item[1], item[0].lower()))
+
+
+def build_stacked_daily_data(rows):
+    daily = {}
+    categories = []
+
+    for row in rows:
+        date = row.get("Date", "")
+        category = row.get("Category", "") or "Unknown"
+        if category not in categories:
+            categories.append(category)
+        daily.setdefault(date, {})
+        daily[date][category] = daily[date].get(category, 0) + row["Minutes"]
+
+    labels = sorted(daily.keys())
+    datasets = []
+    palette = [
+        "#0071e3",
+        "#34c759",
+        "#ff9f0a",
+        "#af52de",
+        "#ff375f",
+        "#5ac8fa",
+        "#8e8e93",
+        "#30b0c7",
+    ]
+
+    for index, category in enumerate(categories):
+        datasets.append(
+            {
+                "label": category,
+                "data": [daily.get(label, {}).get(category, 0) for label in labels],
+                "backgroundColor": palette[index % len(palette)],
+                "borderRadius": 6,
+            }
+        )
+
+    return {"labels": labels, "datasets": datasets}
+
+
+def build_recommendations(rows, today_rows, category_rows, browsing_rows, daily_rows):
+    recommendations = []
+    total_minutes = sum(row["Minutes"] for row in rows)
+    if total_minutes == 0:
+        return ["Use the tracker for a full day to unlock time management recommendations."]
+
+    category_map = {name: minutes for name, minutes in category_rows}
+    deep_work = category_map.get("Deep Work", 0)
+    browsing = category_map.get("Web Browsing", 0)
+    meetings = category_map.get("Meetings", 0)
+    email = category_map.get("Email", 0)
+    idle = category_map.get("Idle", 0)
+
+    if browsing and browsing / total_minutes >= 0.3:
+        top_site = browsing_rows[0][0] if browsing_rows else "web browsing"
+        recommendations.append(
+            f"Web browsing is taking a large share of your logged time. Try batching browsing-heavy work and set tighter limits around {top_site}."
+        )
+
+    if deep_work and deep_work / total_minutes < 0.25:
+        recommendations.append(
+            "Deep work is a relatively small share of your time. Try blocking one or two protected focus windows each day with Slack and email closed."
+        )
+
+    if meetings and meetings / total_minutes >= 0.35:
+        recommendations.append(
+            "Meetings are consuming a big portion of the week. Consider consolidating check-ins and protecting at least one meeting-free block each day."
+        )
+
+    if email and email / total_minutes >= 0.15:
+        recommendations.append(
+            "Email time looks high. Checking inbox on a schedule instead of continuously may help reduce context switching."
+        )
+
+    if idle and idle / total_minutes >= 0.1:
+        recommendations.append(
+            "There is a noticeable amount of idle time. Review whether those gaps are breaks you want to keep or interruptions worth reducing."
+        )
+
+    if len(daily_rows) >= 3:
+        minutes_only = [minutes for _, minutes in daily_rows]
+        avg_minutes = sum(minutes_only) / len(minutes_only)
+        last_day_minutes = daily_rows[0][1]
+        if last_day_minutes < avg_minutes * 0.7:
+            recommendations.append(
+                "Your most recent logged day was lighter than your recent average. If that reflects distraction rather than schedule changes, try defining a clear top-three task list before you start."
+            )
+
+    if today_rows:
+        today_browsing = sum(row["Minutes"] for row in today_rows if row.get("Category") == "Web Browsing")
+        today_total = sum(row["Minutes"] for row in today_rows)
+        if today_total and today_browsing / today_total >= 0.4:
+            recommendations.append(
+                "Today’s browsing time is elevated. A good reset could be starting the next work block with a single named objective before opening new tabs."
+            )
+
+    if not recommendations:
+        recommendations.append(
+            "Your category mix looks reasonably balanced. Keep watching for repeat spikes in browsing or meetings and protect the time blocks that produce your best deep work."
+        )
+
+    return recommendations[:5]
+
+
 def generate_report():
     ensure_log_files()
     rows = read_summary_rows()
@@ -164,12 +288,14 @@ def generate_report():
     category_rows = [(name, minutes) for name, minutes in summarize_minutes(rows, "Category")]
     app_rows = [(name, minutes) for name, minutes in summarize_minutes(rows, "App")]
     today_page_rows = [(name, minutes) for name, minutes in summarize_minutes(today_rows, "Page")[:12]]
+    browsing_rows = [(name, minutes) for name, minutes in summarize_browser_minutes(rows)[:12]]
 
     daily_totals = {}
     for row in rows:
         date = row.get("Date", "")
         daily_totals[date] = daily_totals.get(date, 0) + row["Minutes"]
     daily_rows = sorted(daily_totals.items(), key=lambda item: item[0], reverse=True)
+    daily_rows_chronological = sorted(daily_totals.items(), key=lambda item: item[0])
 
     recent_rows = []
     for row in reversed(rows[-15:]):
@@ -183,6 +309,25 @@ def generate_report():
             )
         )
 
+    chart_data = {
+        "categoryPie": {
+            "labels": [name for name, _ in category_rows],
+            "values": [minutes for _, minutes in category_rows],
+        },
+        "browsingPie": {
+            "labels": [name for name, _ in browsing_rows],
+            "values": [minutes for _, minutes in browsing_rows],
+        },
+        "stackedDaily": build_stacked_daily_data(rows),
+    }
+    recommendations = build_recommendations(
+        rows,
+        today_rows,
+        category_rows,
+        browsing_rows,
+        daily_rows_chronological,
+    )
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -190,42 +335,42 @@ def generate_report():
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="30">
   <title>Activity Tracker Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {{
-      --bg: #f4efe7;
-      --panel: #fffaf2;
-      --ink: #1f2933;
-      --muted: #6b7280;
-      --line: #d7cbb8;
-      --accent: #b85c38;
-      --accent-soft: #f3d7bf;
+      --bg: #f5f5f7;
+      --panel: #ffffff;
+      --panel-soft: #fbfbfd;
+      --ink: #1d1d1f;
+      --muted: #6e6e73;
+      --line: #d2d2d7;
+      --accent: #0071e3;
+      --accent-soft: #e8f2ff;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
-      font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+      font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
       color: var(--ink);
-      background:
-        radial-gradient(circle at top right, #f7dcc8 0, transparent 30%),
-        linear-gradient(180deg, #f8f3eb 0%, var(--bg) 100%);
+      background: var(--bg);
     }}
     main {{
-      max-width: 1200px;
+      max-width: 1280px;
       margin: 0 auto;
-      padding: 40px 20px 56px;
+      padding: 36px 20px 56px;
     }}
     .hero {{
       margin-bottom: 24px;
     }}
     h1 {{
       margin: 0 0 8px;
-      font-size: 42px;
+      font-size: 38px;
       line-height: 1;
     }}
     .sub {{
       margin: 0;
       color: var(--muted);
-      font-size: 16px;
+      font-size: 15px;
     }}
     .stats {{
       display: grid;
@@ -234,10 +379,10 @@ def generate_report():
       margin: 28px 0;
     }}
     .stat, .panel {{
-      background: color-mix(in srgb, var(--panel) 92%, white 8%);
+      background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 20px;
-      box-shadow: 0 10px 30px rgba(74, 52, 33, 0.06);
+      border-radius: 18px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
     }}
     .stat {{
       padding: 18px;
@@ -257,6 +402,12 @@ def generate_report():
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 18px;
+    }}
+    .charts {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+      margin-bottom: 18px;
     }}
     .panel {{
       padding: 18px;
@@ -303,6 +454,28 @@ def generate_report():
       font-size: 13px;
       font-weight: 600;
     }}
+    .chart-panel {{
+      min-height: 360px;
+    }}
+    .wide {{
+      grid-column: 1 / -1;
+    }}
+    .chart-wrap {{
+      position: relative;
+      height: 280px;
+    }}
+    .recommendations {{
+      background: var(--panel-soft);
+    }}
+    .recommendations ul {{
+      margin: 0;
+      padding-left: 20px;
+    }}
+    .recommendations li {{
+      margin: 0 0 10px;
+      color: var(--ink);
+      line-height: 1.5;
+    }}
   </style>
 </head>
 <body>
@@ -320,9 +493,31 @@ def generate_report():
       <div class="stat"><div class="label">Today's Sessions</div><div class="value">{len(today_rows)}</div></div>
     </section>
 
+    <section class="charts">
+      <section class="panel chart-panel">
+        <h2>Category Breakdown</h2>
+        <div class="chart-wrap"><canvas id="categoryPieChart"></canvas></div>
+      </section>
+      <section class="panel chart-panel">
+        <h2>Web Browsing URLs</h2>
+        <div class="chart-wrap"><canvas id="browsingPieChart"></canvas></div>
+      </section>
+      <section class="panel chart-panel wide">
+        <h2>Daily Category Mix</h2>
+        <div class="chart-wrap"><canvas id="stackedDailyChart"></canvas></div>
+      </section>
+    </section>
+
     <section class="grid">
+      <section class="panel recommendations">
+        <h2>Recommendations</h2>
+        <ul>
+          {"".join(f"<li>{escape(item)}</li>" for item in recommendations)}
+        </ul>
+      </section>
       {render_table("Time by Category", ["Category", "Minutes"], category_rows)}
       {render_table("Time by App", ["App", "Minutes"], app_rows)}
+      {render_table("Web Browsing URLs", ["Site", "Minutes"], browsing_rows)}
       {render_table("Today by Page", ["Page", "Minutes"], today_page_rows)}
       {render_table("Daily Totals", ["Date", "Minutes"], daily_rows)}
       {render_table("Recent Logged Activity", ["Date", "App", "Category", "Page", "Minutes"], recent_rows)}
@@ -330,6 +525,72 @@ def generate_report():
 
     <p class="footer">Daily text logs are saved in {escape(str(DAILY_LOG_DIR))} and cumulative summaries stay in {escape(str(DAILY_SUMMARY_PATH))}.</p>
   </main>
+  <script>
+    const chartData = {json.dumps(chart_data)};
+    const palette = ["#0071e3", "#34c759", "#ff9f0a", "#af52de", "#ff375f", "#5ac8fa", "#8e8e93", "#30b0c7", "#ffd60a", "#64d2ff", "#bf5af2", "#ff453a"];
+
+    function makePieChart(elementId, labels, values) {{
+      const ctx = document.getElementById(elementId);
+      if (!ctx) return;
+      new Chart(ctx, {{
+        type: 'pie',
+        data: {{
+          labels,
+          datasets: [{{
+            data: values,
+            backgroundColor: palette.slice(0, labels.length),
+            borderColor: '#ffffff',
+            borderWidth: 2
+          }}]
+        }},
+        options: {{
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {{
+            legend: {{
+              position: 'bottom'
+            }}
+          }}
+        }}
+      }});
+    }}
+
+    makePieChart('categoryPieChart', chartData.categoryPie.labels, chartData.categoryPie.values);
+    makePieChart('browsingPieChart', chartData.browsingPie.labels, chartData.browsingPie.values);
+
+    const stackedCtx = document.getElementById('stackedDailyChart');
+    if (stackedCtx) {{
+      new Chart(stackedCtx, {{
+        type: 'bar',
+        data: chartData.stackedDaily,
+        options: {{
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {{
+            x: {{
+              stacked: true,
+              grid: {{
+                display: false
+              }}
+            }},
+            y: {{
+              stacked: true,
+              beginAtZero: true,
+              title: {{
+                display: true,
+                text: 'Minutes'
+              }}
+            }}
+          }},
+          plugins: {{
+            legend: {{
+              position: 'bottom'
+            }}
+          }}
+        }}
+      }});
+    }}
+  </script>
 </body>
 </html>
 """
